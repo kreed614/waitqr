@@ -43,29 +43,39 @@ def root():
     }
 
 @app.post("/create-payment-intent")
-async def create_payment(order: OrderRequest):
-    if not stripe.api_key:
-        raise HTTPException(status_code=500, detail="Stripe Secret Key not configured.")
-        
+async def create_payment(order: OrderRequest, platform: str = "mobile"):
     try:
-        # Calculate total in cents
         total_amount = sum(item.price * item.quantity for item in order.items)
 
-        # Create the PaymentIntent
+        if platform == "web":
+            # Create a Checkout Session for the browser
+            session = stripe.checkout.Session.create(
+                payment_method_types=['card'],
+                line_items=[{
+                    'price_data': {
+                        'currency': 'usd',
+                        'product_data': {'name': 'The Blue Light Order'},
+                        'unit_amount': total_amount,
+                    },
+                    'quantity': 1,
+                }],
+                mode='payment',
+                success_url='https://your-app-url.com/success',
+                cancel_url='https://your-app-url.com/cart',
+            )
+            return {"url": session.url}
+
+        # Original Mobile Logic
         intent = stripe.PaymentIntent.create(
             amount=total_amount,
             currency="usd",
             automatic_payment_methods={"enabled": True},
-            metadata={"integration_check": "waitqr_pilot"},
         )
-
         return {
             "clientSecret": intent.client_secret,
             "publishableKey": STRIPE_PUBLISHABLE_KEY
         }
     except Exception as e:
-        # Vercel logs this to their 'Logs' tab
-        print(f"Stripe Error: {e}") 
         raise HTTPException(status_code=400, detail=str(e))
 
 # Note: No uvicorn.run here. Vercel's Serverless Functions handle the invocation.
