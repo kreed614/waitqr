@@ -44,36 +44,48 @@ def root():
 
 @app.post("/create-payment-intent")
 async def create_payment(request: Request):
-    data = await request.json()
-    items = data.get('items')
-    platform = data.get('platform') # 'web' or 'mobile'
+    body = await request.json()
+    items = body.get("items", [])
+    platform = body.get("platform", "mobile") # Default to mobile if not sent
 
-    if platform == 'web':
-        # --- WEB: Create a Checkout Session ---
+    # Calculate total in cents
+    total_amount = sum(item['price'] * item['quantity'] for item in items)
+
+    if platform == "web":
+        # --- WEB LOGIC: Create a Checkout Session ---
         try:
-            checkout_session = stripe.checkout.Session.create(
+            session = stripe.checkout.Session.create(
+                payment_method_types=['card'],
                 line_items=[{
                     'price_data': {
                         'currency': 'usd',
-                        'product_data': {'name': item['name']},
-                        'unit_amount': item['price'],
+                        'product_data': {'name': 'WaitQr Order'},
+                        'unit_amount': total_amount,
                     },
-                    'quantity': item['quantity'],
-                } for item in items],
+                    'quantity': 1,
+                }],
                 mode='payment',
-                success_url='https://your-site.vercel.app/success',
-                cancel_url='https://your-site.vercel.app/cart',
+                # Update these to your actual Vercel app URL
+                success_url='https://waitqr.vercel.app/success',
+                cancel_url='https://waitqr.vercel.app/cart',
             )
-            return {"url": checkout_session.url}
+            return {"url": session.url}
         except Exception as e:
+            print(f"Stripe Web Error: {e}")
             return {"error": str(e)}, 400
+    
     else:
-        # --- MOBILE: Create a Payment Intent ---
-        intent = stripe.PaymentIntent.create(
-            amount=calculate_total(items),
-            currency='usd',
-        )
-        return {"clientSecret": intent.client_secret}
+        # --- MOBILE LOGIC: Create Payment Intent (What's happening now) ---
+        try:
+            intent = stripe.PaymentIntent.create(
+                amount=total_amount,
+                currency="usd",
+                automatic_payment_methods={"enabled": True},
+            )
+            return {"clientSecret": intent.client_secret}
+        except Exception as e:
+            print(f"Stripe Mobile Error: {e}")
+            return {"error": str(e)}, 400
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
