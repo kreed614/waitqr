@@ -43,38 +43,37 @@ def root():
     }
 
 @app.post("/create-payment-intent")
-async def create_payment(order: OrderRequest, platform: str = "mobile"):
-    try:
-        total_amount = sum(item.price * item.quantity for item in order.items)
+async def create_payment(request: Request):
+    data = await request.json()
+    items = data.get('items')
+    platform = data.get('platform') # 'web' or 'mobile'
 
-        if platform == "web":
-            # Create a Checkout Session for the browser
-            session = stripe.checkout.Session.create(
-                payment_method_types=['card'],
+    if platform == 'web':
+        # --- WEB: Create a Checkout Session ---
+        try:
+            checkout_session = stripe.checkout.Session.create(
                 line_items=[{
                     'price_data': {
                         'currency': 'usd',
-                        'product_data': {'name': 'The Blue Light Order'},
-                        'unit_amount': total_amount,
+                        'product_data': {'name': item['name']},
+                        'unit_amount': item['price'],
                     },
-                    'quantity': 1,
-                }],
+                    'quantity': item['quantity'],
+                } for item in items],
                 mode='payment',
-                success_url='https://your-app-url.com/success',
-                cancel_url='https://your-app-url.com/cart',
+                success_url='https://your-site.vercel.app/success',
+                cancel_url='https://your-site.vercel.app/cart',
             )
-            return {"url": session.url}
-
-        # Original Mobile Logic
+            return {"url": checkout_session.url}
+        except Exception as e:
+            return {"error": str(e)}, 400
+    else:
+        # --- MOBILE: Create a Payment Intent ---
         intent = stripe.PaymentIntent.create(
-            amount=total_amount,
-            currency="usd",
-            automatic_payment_methods={"enabled": True},
+            amount=calculate_total(items),
+            currency='usd',
         )
-        return {
-            "clientSecret": intent.client_secret,
-            "publishableKey": STRIPE_PUBLISHABLE_KEY
-        }
+        return {"clientSecret": intent.client_secret}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
